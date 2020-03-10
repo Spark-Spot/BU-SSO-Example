@@ -1,5 +1,5 @@
 {
-  "name": "passport-saml-bu-example",
+  "name": "bu-sso-example",
   "version": "1.0.0",
   "description": "An example web app that connects to BU's SSO Shibboleth Identity Provider.",
   "dependencies": {
