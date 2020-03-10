@@ -1,14 +1,13 @@
-var http = require('http');
-var fs = require('fs');
-var express = require("express");
-var dotenv = require('dotenv');
-var bodyParser = require('body-parser');
-var cookieParser = require('cookie-parser');
-var session = require('express-session');
-var passport = require('passport');
-var saml = require('passport-saml');
+const fs = require('fs');
+const express = require("express");
+const dotenv = require('dotenv');
+const bodyParser = require('body-parser');
+const cookieParser = require('cookie-parser');
+const session = require('express-session');
+const passport = require('passport');
+const SamlStrategy = require('passport-saml').Strategy;
 
-dotenv.load();
+dotenv.config();
 
 passport.serializeUser(function(user, done) {
   done(null, user);
@@ -18,7 +17,7 @@ passport.deserializeUser(function(user, done) {
   done(null, user);
 });
 
-var samlStrategy = new saml.Strategy({
+const SamlOptions = {
   // URL that goes from the Identity Provider -> Service Provider
   callbackUrl: process.env.CALLBACK_URL,
   // URL that goes from the Service Provider -> Identity Provider
@@ -26,29 +25,43 @@ var samlStrategy = new saml.Strategy({
   // Usually specified as `/shibboleth` from site root
   issuer: process.env.ISSUER,
   identifierFormat: null,
-  // Service Provider private key
-  decryptionPvk: fs.readFileSync(__dirname + '/cert/key.pem', 'utf8'),
-  // Service Provider Certificate
-  privateCert: fs.readFileSync(__dirname + '/cert/key.pem', 'utf8'),
-  // Identity Provider's public key
-  cert: fs.readFileSync(__dirname + '/cert/idp_cert.pem', 'utf8'),
   validateInResponseTo: false,
   disableRequestedAuthnContext: true
-}, function(profile, done) {
-  return done(null, profile); 
-});
+}
 
+// Service Provider private key
+if (process.env.SHIBBOLETH_KEY) {
+  SamlOptions.decryptionPvk = JSON.parse(`"${process.env.SHIBBOLETH_KEY}"`);
+  SamlOptions.privateCert = JSON.parse(`"${process.env.SHIBBOLETH_KEY}"`);
+} else {
+  SamlOptions.decryptionPvk = fs.readFileSync(__dirname + '/cert/key.pem', 'utf8');
+  SamlOptions.privateCert = fs.readFileSync(__dirname + '/cert/key.pem', 'utf8');
+}
+
+// Identity Provider's public key
+if (process.env.SHIBBOLETH_IDP_CERT) {
+  SamlOptions.cert = JSON.parse(`"${process.env.SHIBBOLETH_IDP_CERT}"`);
+} else {
+  SamlOptions.cert = fs.readFileSync(__dirname + '/cert/cert_idp.pem', 'utf8');
+}
+
+const samlStrategy = new SamlStrategy(SamlOptions, (profile, done) => done(null, profile));
 passport.use(samlStrategy);
 
-var app = express();
+const app = express();
 
 app.use(cookieParser());
-app.use(bodyParser());
-app.use(session({secret: process.env.SESSION_SECRET}));
+app.use(bodyParser.json());
+app.use(bodyParser.urlencoded({ extended: true }));
+app.use(session({
+  secret: process.env.SESSION_SECRET,
+  resave: true,
+  saveUninitialized: true
+}));
 app.use(passport.initialize());
 app.use(passport.session());
 
-function ensureAuthenticated(req, res, next) {
+const ensureAuthenticated = (req, res, next) => {
   if (req.isAuthenticated())
     return next();
   else
@@ -57,45 +70,41 @@ function ensureAuthenticated(req, res, next) {
 
 app.get('/',
   ensureAuthenticated, 
-  function(req, res) {
-    res.send('Authenticated');
-  }
+  (req, res) => res.send('Authenticated')
 );
 
 app.get('/login',
   passport.authenticate('saml', { failureRedirect: '/login/fail' }),
-  function (req, res) {
-    res.redirect('/');
-  }
+  (req, res) => res.redirect('/')
 );
 
 app.post('/login/callback',
    passport.authenticate('saml', { failureRedirect: '/login/fail' }),
-  function(req, res) {
-    res.redirect('/');
-  }
+  (req, res) => res.redirect('/')
 );
 
 app.get('/login/fail', 
-  function(req, res) {
-    res.status(401).send('Login failed');
-  }
+  (req, res) => res.status(401).send('Login failed')
 );
 
-app.get('/Shibboleth.sso/Metadata', 
-  function(req, res) {
+app.get('/shibboleth/metadata',
+  (req, res) => {
     res.type('application/xml');
-    res.status(200).send(samlStrategy.generateServiceProviderMetadata(fs.readFileSync(__dirname + '/cert/cert.pem', 'utf8')));
+    let cert = null;
+    if (process.env.SHIBBOLETH_CERT) {
+      cert = JSON.parse(`"${process.env.SHIBBOLETH_CERT}"`);
+    } else {
+      cert = fs.readFileSync(__dirname + '/cert/cert.pem', 'utf8');
+    }
+    res.status(200).send(samlStrategy.generateServiceProviderMetadata(cert, cert));
   }
 );
 
 //general error handler
 app.use(function(err, req, res, next) {
-  console.log("Fatal error: " + JSON.stringify(err));
+  console.error("Fatal error: " + JSON.stringify(err));
   next(err);
 });
 
-var server = app.listen(4006, function () {
-  console.log('Listening on port %d', server.address().port)
-});
-
+const serverPort = process.env.PORT || 3030;
+const server = app.listen(serverPort, () => console.log(`Listening on port ${serverPort}`));
