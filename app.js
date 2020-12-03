@@ -62,6 +62,7 @@ app.use(passport.initialize());
 app.use(passport.session());
 
 const ensureAuthenticated = (req, res, next) => {
+  console.log("req: " + JSON.stringify(req))
   if (req.isAuthenticated())
     return next();
   else
@@ -72,8 +73,6 @@ app.get('/',
   ensureAuthenticated, 
   (req, res) => {
     res.send('Authenticated')
-    console.log("Req is: " + JSON.stringify(req))
-    console.log("Res is: " + res)
   }
 );
 
