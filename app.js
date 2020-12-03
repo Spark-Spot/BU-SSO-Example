@@ -70,7 +70,7 @@ const ensureAuthenticated = (req, res, next) => {
 
 app.get('/',
   ensureAuthenticated, 
-  (req, res) => res.send('Authenticated')
+  (req, res) => res.send('Authenticated' + req)
 );
 
 app.get('/login',
