@@ -62,7 +62,7 @@ app.use(passport.initialize());
 app.use(passport.session());
 
 const ensureAuthenticated = (req, res, next) => {
-  console.log("req: " + JSON.stringify(req))
+  console.log("req: " + req.user)
   if (req.isAuthenticated())
     return next();
   else
